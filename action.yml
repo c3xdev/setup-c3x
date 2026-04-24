@@ -1,5 +1,5 @@
 name: "Setup C3X"
-description: "Install the C3X CLI for cloud cost estimation with optional GitHub App authentication for branded PR comments"
+description: "Install the C3X CLI for cloud cost estimation with automatic branded PR comments"
 branding:
   icon: "dollar-sign"
   color: "blue"
@@ -9,17 +9,11 @@ inputs:
     description: "C3X version to install (e.g. 1.0.0). Defaults to latest."
     required: false
     default: "latest"
-  github-app-id:
-    description: "C3X Cloud GitHub App ID. When provided with github-app-private-key, generates an installation token so PR comments appear as 'C3X Cloud' with the C3X logo."
-    required: false
-  github-app-private-key:
-    description: "C3X Cloud GitHub App private key (PEM format). Used with github-app-id to generate installation tokens."
-    required: false
 
 outputs:
   token:
-    description: "GitHub token for c3x comment. App installation token if app credentials are provided, empty otherwise."
-    value: ${{ steps.app-token.outputs.token }}
+    description: "GitHub token for c3x comment. Branded C3X Cloud token if the C3X Cloud app is installed, empty otherwise."
+    value: ${{ steps.c3x-token.outputs.token }}
 
 runs:
   using: "composite"
@@ -69,10 +63,38 @@ runs:
       shell: bash
       run: c3x --version
 
-    - name: Generate GitHub App token
-      id: app-token
-      if: inputs.github-app-id && inputs.github-app-private-key
-      uses: actions/create-github-app-token@v1
-      with:
-        app-id: ${{ inputs.github-app-id }}
-        private-key: ${{ inputs.github-app-private-key }}
+    - name: Get C3X Cloud token
+      id: c3x-token
+      shell: bash
+      run: |
+        # Get the C3X Cloud app installation ID for this repo
+        INSTALLATION=$(curl -fsSL \
+          -H "Authorization: token ${{ github.token }}" \
+          -H "Accept: application/vnd.github+json" \
+          "https://api.github.com/repos/${{ github.repository }}/installation" 2>/dev/null)
+
+        INSTALL_ID=$(echo "$INSTALLATION" | grep '"id"' | head -1 | sed 's/[^0-9]//g')
+
+        if [ -z "$INSTALL_ID" ]; then
+          echo "C3X Cloud app not installed on this repo. Using default GITHUB_TOKEN."
+          echo "token=${{ github.token }}" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        # Exchange installation ID for a branded token via C3X Cloud token service
+        RESPONSE=$(curl -fsSL -X POST \
+          -H "Content-Type: application/json" \
+          -d "{\"installation_id\": $INSTALL_ID}" \
+          "https://token.c3x.dev" 2>/dev/null)
+
+        TOKEN=$(echo "$RESPONSE" | grep '"token"' | head -1 | sed 's/.*"token":"\([^"]*\)".*/\1/')
+
+        if [ -z "$TOKEN" ]; then
+          echo "Failed to get C3X Cloud token. Falling back to GITHUB_TOKEN."
+          echo "token=${{ github.token }}" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        echo "::add-mask::$TOKEN"
+        echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
+        echo "Using C3X Cloud branded token for PR comments."
