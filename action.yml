@@ -1,5 +1,5 @@
 name: "Setup C3X"
-description: "Install the C3X CLI for cloud cost estimation"
+description: "Install the C3X CLI for cloud cost estimation with optional GitHub App authentication for branded PR comments"
 branding:
   icon: "dollar-sign"
   color: "blue"
@@ -9,6 +9,17 @@ inputs:
     description: "C3X version to install (e.g. 1.0.0). Defaults to latest."
     required: false
     default: "latest"
+  github-app-id:
+    description: "C3X Cloud GitHub App ID. When provided with github-app-private-key, generates an installation token so PR comments appear as 'C3X Cloud' with the C3X logo."
+    required: false
+  github-app-private-key:
+    description: "C3X Cloud GitHub App private key (PEM format). Used with github-app-id to generate installation tokens."
+    required: false
+
+outputs:
+  token:
+    description: "GitHub token for c3x comment. App installation token if app credentials are provided, empty otherwise."
+    value: ${{ steps.app-token.outputs.token }}
 
 runs:
   using: "composite"
@@ -57,3 +68,11 @@ runs:
     - name: Verify installation
       shell: bash
       run: c3x --version
+
+    - name: Generate GitHub App token
+      id: app-token
+      if: inputs.github-app-id && inputs.github-app-private-key
+      uses: actions/create-github-app-token@v1
+      with:
+        app-id: ${{ inputs.github-app-id }}
+        private-key: ${{ inputs.github-app-private-key }}
