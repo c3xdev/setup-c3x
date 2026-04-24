@@ -1,0 +1,59 @@
+name: "Setup C3X"
+description: "Install the C3X CLI for cloud cost estimation"
+branding:
+  icon: "dollar-sign"
+  color: "blue"
+
+inputs:
+  version:
+    description: "C3X version to install (e.g. 1.0.0). Defaults to latest."
+    required: false
+    default: "latest"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Determine version
+      id: version
+      shell: bash
+      run: |
+        VERSION="${{ inputs.version }}"
+        if [ "$VERSION" = "latest" ]; then
+          VERSION=$(curl -fsSL https://api.github.com/repos/c3xdev/c3x/releases/latest | grep '"tag_name"' | sed 's/.*"v\(.*\)".*/\1/')
+        fi
+        echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+    - name: Determine platform
+      id: platform
+      shell: bash
+      run: |
+        OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+        ARCH=$(uname -m)
+        case "$ARCH" in
+          x86_64) ARCH="amd64" ;;
+          aarch64|arm64) ARCH="arm64" ;;
+        esac
+        echo "os=$OS" >> "$GITHUB_OUTPUT"
+        echo "arch=$ARCH" >> "$GITHUB_OUTPUT"
+
+    - name: Cache C3X binary
+      id: cache
+      uses: actions/cache@v4
+      with:
+        path: /usr/local/bin/c3x
+        key: c3x-${{ steps.version.outputs.version }}-${{ steps.platform.outputs.os }}-${{ steps.platform.outputs.arch }}
+
+    - name: Install C3X
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        VERSION="${{ steps.version.outputs.version }}"
+        OS="${{ steps.platform.outputs.os }}"
+        ARCH="${{ steps.platform.outputs.arch }}"
+        URL="https://github.com/c3xdev/c3x/releases/download/v${VERSION}/c3x-${OS}-${ARCH}.tar.gz"
+        curl -fsSL "$URL" | tar -xz -C /usr/local/bin c3x
+        chmod +x /usr/local/bin/c3x
+
+    - name: Verify installation
+      shell: bash
+      run: c3x --version
