@@ -1,5 +1,5 @@
 name: "Setup C3X"
-description: "Install the C3X CLI for cloud cost estimation with automatic branded PR comments"
+description: "Cloud cost estimation for Terraform. Installs the CLI, estimates costs, and posts branded PR comments."
 branding:
   icon: "dollar-sign"
   color: "blue"
@@ -9,10 +9,17 @@ inputs:
     description: "C3X version to install (e.g. 1.0.0). Defaults to latest."
     required: false
     default: "latest"
+  path:
+    description: "Path to Terraform directory. When set, runs cost estimation and posts a PR comment automatically."
+    required: false
+  show-all-projects:
+    description: "Show all projects in the comment, even if they have no cost change."
+    required: false
+    default: "true"
 
 outputs:
   token:
-    description: "GitHub token for c3x comment. Branded C3X Cloud token if the C3X Cloud app is installed, empty otherwise."
+    description: "GitHub token for c3x comment. Branded C3X Cloud token if the app is installed, GITHUB_TOKEN otherwise."
     value: ${{ steps.c3x-token.outputs.token }}
 
 runs:
@@ -68,7 +75,6 @@ runs:
       id: c3x-token
       shell: bash
       run: |
-        # Request a branded token from the C3X Cloud token service
         RESPONSE=$(curl -s -X POST \
           -H "Content-Type: application/json" \
           -d "{\"repo\": \"${{ github.repository }}\"}" \
@@ -85,3 +91,33 @@ runs:
         echo "::add-mask::$TOKEN"
         echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
         echo "Using C3X Cloud branded token for PR comments."
+
+    # Auto-estimate and comment when path is provided and running on a PR
+    - name: Estimate base branch
+      if: inputs.path && github.event_name == 'pull_request'
+      shell: bash
+      run: |
+        git fetch origin ${{ github.event.pull_request.base.ref }} --depth=1
+        git checkout ${{ github.event.pull_request.base.ref }} --quiet
+        c3x estimate --path ${{ inputs.path }} --format json --out-file /tmp/c3x-base.json
+        git checkout ${{ github.sha }} --quiet
+
+    - name: Estimate and diff
+      if: inputs.path && github.event_name == 'pull_request'
+      shell: bash
+      run: c3x diff --path ${{ inputs.path }} --compare-to /tmp/c3x-base.json --format json --out-file /tmp/c3x.json
+
+    - name: Post PR comment
+      if: inputs.path && github.event_name == 'pull_request'
+      shell: bash
+      run: |
+        SHOW_ALL=""
+        if [ "${{ inputs.show-all-projects }}" = "true" ]; then
+          SHOW_ALL="--show-all-projects"
+        fi
+        c3x comment github \
+          --path /tmp/c3x.json \
+          --github-token ${{ steps.c3x-token.outputs.token }} \
+          --repo ${{ github.repository }} \
+          --pull-request ${{ github.event.pull_request.number }} \
+          $SHOW_ALL
