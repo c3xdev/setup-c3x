@@ -69,10 +69,10 @@ runs:
       shell: bash
       run: |
         # Get the C3X Cloud app installation ID for this repo
-        INSTALLATION=$(curl -fsSL \
+        INSTALLATION=$(curl -sSL \
           -H "Authorization: token ${{ github.token }}" \
           -H "Accept: application/vnd.github+json" \
-          "https://api.github.com/repos/${{ github.repository }}/installation" 2>/dev/null)
+          "https://api.github.com/repos/${{ github.repository }}/installation" 2>/dev/null || echo "{}")
 
         INSTALL_ID=$(echo "$INSTALLATION" | grep '"id"' | head -1 | sed 's/[^0-9]//g')
 
@@ -83,10 +83,10 @@ runs:
         fi
 
         # Exchange installation ID for a branded token via C3X Cloud token service
-        RESPONSE=$(curl -fsSL -X POST \
+        RESPONSE=$(curl -sSL -X POST \
           -H "Content-Type: application/json" \
           -d "{\"installation_id\": $INSTALL_ID}" \
-          "https://token.c3x.dev" 2>/dev/null)
+          "https://token.c3x.dev" 2>/dev/null || echo "{}")
 
         TOKEN=$(echo "$RESPONSE" | grep '"token"' | head -1 | sed 's/.*"token":"\([^"]*\)".*/\1/')
 
