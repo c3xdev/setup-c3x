@@ -56,7 +56,8 @@ runs:
         OS="${{ steps.platform.outputs.os }}"
         ARCH="${{ steps.platform.outputs.arch }}"
         URL="https://github.com/c3xdev/c3x/releases/download/v${VERSION}/c3x-${OS}-${ARCH}.tar.gz"
-        curl -fsSL "$URL" | tar -xz -C /usr/local/bin c3x
+        curl -fsSL "$URL" | tar -xz -C /usr/local/bin
+        mv /usr/local/bin/c3x-${OS}-${ARCH} /usr/local/bin/c3x
         chmod +x /usr/local/bin/c3x
 
     - name: Verify installation
