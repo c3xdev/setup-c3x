@@ -24,7 +24,7 @@ runs:
       run: |
         VERSION="${{ inputs.version }}"
         if [ "$VERSION" = "latest" ]; then
-          VERSION=$(curl -fsSL https://api.github.com/repos/c3xdev/c3x/releases/latest | grep '"tag_name"' | sed 's/.*"v\(.*\)".*/\1/')
+          VERSION=$(curl -fsSL -H "Authorization: token ${{ github.token }}" https://api.github.com/repos/c3xdev/c3x/releases/latest | grep '"tag_name"' | sed 's/.*"v\(.*\)".*/\1/')
         fi
         echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
