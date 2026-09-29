@@ -1,11 +1,17 @@
 # setup-c3x
 
-GitHub Action for [C3X](https://c3x.dev) cloud cost estimation.
+GitHub Action for [c3x](https://c3x.dev): cloud cost estimation for
+Terraform, OpenTofu and CloudFormation. It posts the cost change of every
+pull request as a comment. Free and open source, no API key, no secrets.
+
+This action is a thin wrapper around the action released with the CLI,
+[`c3xdev/c3x@v0`](https://github.com/c3xdev/c3x#in-ci), and gets every
+fix to it automatically. New workflows can use either.
 
 ## Quick start
 
 ```yaml
-name: Cost Estimation
+name: Cost estimation
 on: [pull_request]
 permissions:
   pull-requests: write
@@ -20,55 +26,62 @@ jobs:
           path: .
 ```
 
-That's it. Every PR gets a cost estimate comment. No API key, no secrets.
+The comment shows the monthly cost before and after the pull request and
+the change per resource:
 
-### Branded comments
+| Baseline | New | Change |
+|---:|---:|---:|
+| $1038.32/mo | $1318.64/mo | 🔺 +$280.32 |
 
-Install the [C3X Cloud](https://github.com/apps/c3x-cloud) app on your repository. Comments will appear as **C3X Cloud** with the C3X logo instead of the generic github-actions bot. No configuration needed.
-
-### Pin a specific version
+## Gates
 
 ```yaml
-- uses: c3xdev/setup-c3x@v1
-  with:
-    path: .
-    version: "1.0.1"
+      - uses: c3xdev/setup-c3x@v1
+        with:
+          path: .
+          budget-delta: "50"   # fail if this PR adds more than $50/mo
+          budget: "5000"       # fail if the monthly total exceeds $5,000
+          strict: true         # fail if any line rests on an assumption
 ```
 
-### Setup only (no auto-comment)
+## Plan JSON
 
-Omit the `path` input to install the CLI without running estimation:
+If your pipeline already runs `terraform plan`, give c3x the plan. It has
+the real values of data sources and computed attributes:
 
 ```yaml
-- uses: c3xdev/setup-c3x@v1
-  id: c3x
-- run: c3x estimate --path . --format json --out-file estimate.json
-- run: c3x comment github --path estimate.json --github-token ${{ steps.c3x.outputs.token }} --repo ${{ github.repository }} --pull-request ${{ github.event.pull_request.number }}
+      - run: terraform plan -out=tfplan && terraform show -json tfplan > plan.json
+      - uses: c3xdev/setup-c3x@v1
+        with:
+          path: plan.json
+```
+
+## Install only
+
+Leave `path` empty to install the CLI and run it yourself:
+
+```yaml
+      - uses: c3xdev/setup-c3x@v1
+      - run: c3x estimate --path . --format markdown
 ```
 
 ## Inputs
 
 | Input | Description | Default |
 |---|---|---|
-| `version` | C3X version to install | `latest` |
-| `path` | Path to Terraform directory. When set, runs estimation and posts a PR comment. | |
-| `show-all-projects` | Show all projects in the comment | `true` |
+| `version` | c3x version, e.g. `0.3.12` | `latest` |
+| `path` | Directory, plan JSON or CloudFormation template. Empty installs only. | |
+| `comment` | Post or update the PR comment | `true` |
+| `budget` | Fail when the monthly total exceeds this (0 disables) | `0` |
+| `budget-delta` | Fail when the PR increases the total by more than this (0 disables) | `0` |
+| `strict` | Fail when any line rests on an assumption | `false` |
+| `currency` | Display currency (USD, EUR, GBP, …) | USD |
+| `untrusted` | Untrusted-input mode: `auto` (forks), `true`, `false` | `auto` |
+| `branded-comments` | Comment as the [C3X Cloud](https://github.com/apps/c3x-cloud) app. Needs the app installed and `permissions: id-token: write`. | `false` |
+| `show-all-projects` | Deprecated, ignored | |
 
-## Outputs
-
-| Output | Description |
-|---|---|
-| `token` | GitHub token for `c3x comment`. Branded if C3X Cloud app is installed. |
-
-## How it works
-
-When `path` is set on a pull request:
-
-1. Installs the C3X CLI (cached across runs)
-2. Gets a branded token from C3X Cloud (if the app is installed)
-3. Checks out the base branch and estimates costs
-4. Checks out the PR branch and diffs against the base
-5. Posts a cost comment on the PR
+The `token` output is kept for older workflows and returns the workflow's
+`GITHUB_TOKEN`.
 
 ## License
 
