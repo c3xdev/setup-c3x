@@ -1,123 +1,83 @@
 name: "Setup C3X"
-description: "Cloud cost estimation for Terraform. Installs the CLI, estimates costs, and posts branded PR comments."
+description: "Cloud cost estimation for Terraform, OpenTofu and CloudFormation. Installs the c3x CLI and posts the per-PR cost change as a comment. No API key."
 branding:
   icon: "dollar-sign"
   color: "blue"
 
+# A thin wrapper around the c3x Action in c3xdev/c3x (@v0), which is
+# released with the CLI. Everything the install and estimate steps do,
+# and every fix to them, lives there; this file only maps inputs.
+
 inputs:
   version:
-    description: "C3X version to install (e.g. 1.0.0). Defaults to latest."
+    description: 'c3x version to install, e.g. "0.3.12" or "v0.3.12". Defaults to the latest release.'
     required: false
     default: "latest"
   path:
-    description: "Path to Terraform directory. When set, runs cost estimation and posts a PR comment automatically."
+    description: "Terraform/OpenTofu directory, plan JSON, or CloudFormation template. When set, estimates it and, on a pull request, posts the cost change as a comment. When empty, only installs the CLI."
     required: false
+    default: ""
+  comment:
+    description: "Post or update the cost comment on the pull request (needs pull-requests: write)."
+    required: false
+    default: "true"
+  budget:
+    description: "Fail when the monthly total exceeds this amount (0 disables)."
+    required: false
+    default: "0"
+  budget-delta:
+    description: "Fail when the pull request increases the monthly total by more than this amount (0 disables)."
+    required: false
+    default: "0"
+  strict:
+    description: "Fail when any part of the estimate rests on an assumption (the comment is still posted)."
+    required: false
+    default: "false"
+  currency:
+    description: "Display currency (USD, EUR, GBP, ...)."
+    required: false
+    default: ""
+  untrusted:
+    description: 'Untrusted-input mode for the parsed configuration: "auto" (on for pull requests from forks), "true" or "false".'
+    required: false
+    default: "auto"
+  branded-comments:
+    description: "Post comments as the C3X Cloud app. Needs the app installed on the repository and 'permissions: id-token: write'; otherwise falls back to github-actions."
+    required: false
+    default: "false"
   show-all-projects:
-    description: "Show all projects in the comment, even if they have no cost change."
+    description: "Deprecated and ignored. The comment always lists every changed resource."
     required: false
     default: "true"
 
 outputs:
   token:
-    description: "GitHub token for c3x comment. Branded C3X Cloud token if the app is installed, GITHUB_TOKEN otherwise."
-    value: ${{ steps.c3x-token.outputs.token }}
+    description: "Deprecated. The workflow's GITHUB_TOKEN, kept for workflows that passed it to c3x comment."
+    value: ${{ github.token }}
 
 runs:
   using: "composite"
   steps:
-    - name: Determine version
+    - name: Normalise version
       id: version
       shell: bash
+      env:
+        IN_VERSION: ${{ inputs.version }}
       run: |
-        VERSION="${{ inputs.version }}"
-        if [ "$VERSION" = "latest" ]; then
-          VERSION=$(curl -fsSL -H "Authorization: token ${{ github.token }}" https://api.github.com/repos/c3xdev/c3x/releases/latest | grep '"tag_name"' | sed 's/.*"v\(.*\)".*/\1/')
-        fi
-        echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+        v="$IN_VERSION"
+        case "$v" in latest|v*) ;; *) v="v$v" ;; esac
+        echo "version=$v" >> "$GITHUB_OUTPUT"
 
-    - name: Determine platform
-      id: platform
-      shell: bash
-      run: |
-        OS=$(uname -s | tr '[:upper:]' '[:lower:]')
-        ARCH=$(uname -m)
-        case "$ARCH" in
-          x86_64) ARCH="amd64" ;;
-          aarch64|arm64) ARCH="arm64" ;;
-        esac
-        echo "os=$OS" >> "$GITHUB_OUTPUT"
-        echo "arch=$ARCH" >> "$GITHUB_OUTPUT"
-
-    - name: Cache C3X binary
-      id: cache
-      uses: actions/cache@v4
+    - name: c3x
+      uses: c3xdev/c3x@v0
       with:
-        path: /usr/local/bin/c3x
-        key: c3x-${{ steps.version.outputs.version }}-${{ steps.platform.outputs.os }}-${{ steps.platform.outputs.arch }}
-
-    - name: Install C3X
-      if: steps.cache.outputs.cache-hit != 'true'
-      shell: bash
-      run: |
-        VERSION="${{ steps.version.outputs.version }}"
-        OS="${{ steps.platform.outputs.os }}"
-        ARCH="${{ steps.platform.outputs.arch }}"
-        URL="https://github.com/c3xdev/c3x/releases/download/v${VERSION}/c3x-${OS}-${ARCH}.tar.gz"
-        curl -fsSL "$URL" | tar -xz -C /usr/local/bin
-        mv /usr/local/bin/c3x-${OS}-${ARCH} /usr/local/bin/c3x
-        chmod +x /usr/local/bin/c3x
-
-    - name: Verify installation
-      shell: bash
-      run: c3x --version
-
-    - name: Get C3X Cloud token
-      id: c3x-token
-      shell: bash
-      run: |
-        RESPONSE=$(curl -s -X POST \
-          -H "Content-Type: application/json" \
-          -d "{\"repo\": \"${{ github.repository }}\"}" \
-          "https://token.c3x.dev" 2>/dev/null || echo "{}")
-
-        TOKEN=$(echo "$RESPONSE" | grep -o '"token":"[^"]*"' | head -1 | cut -d'"' -f4)
-
-        if [ -z "$TOKEN" ]; then
-          echo "C3X Cloud app not installed. Using default GITHUB_TOKEN."
-          echo "token=${{ github.token }}" >> "$GITHUB_OUTPUT"
-          exit 0
-        fi
-
-        echo "::add-mask::$TOKEN"
-        echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
-        echo "Using C3X Cloud branded token for PR comments."
-
-    # Auto-estimate and comment when path is provided and running on a PR
-    - name: Estimate base branch
-      if: inputs.path && github.event_name == 'pull_request'
-      shell: bash
-      run: |
-        git fetch origin ${{ github.event.pull_request.base.ref }} --depth=1
-        git checkout ${{ github.event.pull_request.base.ref }} --quiet
-        c3x estimate --path ${{ inputs.path }} --format json --out-file /tmp/c3x-base.json
-        git checkout ${{ github.sha }} --quiet
-
-    - name: Estimate and diff
-      if: inputs.path && github.event_name == 'pull_request'
-      shell: bash
-      run: c3x diff --path ${{ inputs.path }} --compare-to /tmp/c3x-base.json --format json --out-file /tmp/c3x.json
-
-    - name: Post PR comment
-      if: inputs.path && github.event_name == 'pull_request'
-      shell: bash
-      run: |
-        SHOW_ALL=""
-        if [ "${{ inputs.show-all-projects }}" = "true" ]; then
-          SHOW_ALL="--show-all-projects"
-        fi
-        c3x comment github \
-          --path /tmp/c3x.json \
-          --github-token ${{ steps.c3x-token.outputs.token }} \
-          --repo ${{ github.repository }} \
-          --pull-request ${{ github.event.pull_request.number }} \
-          $SHOW_ALL
+        version: ${{ steps.version.outputs.version }}
+        install-only: ${{ inputs.path == '' && 'true' || 'false' }}
+        path: ${{ inputs.path != '' && inputs.path || '.' }}
+        comment: ${{ inputs.comment }}
+        budget: ${{ inputs.budget }}
+        budget-delta: ${{ inputs.budget-delta }}
+        strict: ${{ inputs.strict }}
+        currency: ${{ inputs.currency }}
+        untrusted: ${{ inputs.untrusted }}
+        branded-comments: ${{ inputs.branded-comments }}
