@@ -1,12 +1,15 @@
 # setup-c3x
 
+> **This action now lives in [c3xdev/c3x](https://github.com/c3xdev/c3x#in-ci)**
+> and on the GitHub Marketplace as
+> [C3X Cost Estimation](https://github.com/marketplace/actions/c3x-cost-estimation).
+> New workflows should use `c3xdev/c3x@v0`. Existing `c3xdev/setup-c3x@v1`
+> workflows keep working unchanged: this repository is a thin wrapper around
+> `c3xdev/c3x@v0` and gets every fix to it automatically.
+
 GitHub Action for [c3x](https://c3x.dev): cloud cost estimation for
 Terraform, OpenTofu and CloudFormation. It posts the cost change of every
 pull request as a comment. Free and open source, no API key, no secrets.
-
-This action is a thin wrapper around the action released with the CLI,
-[`c3xdev/c3x@v0`](https://github.com/c3xdev/c3x#in-ci), and gets every
-fix to it automatically. New workflows can use either.
 
 ## Quick start
 
