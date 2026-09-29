@@ -1,5 +1,5 @@
 name: "Setup C3X"
-description: "Cloud cost estimation for Terraform, OpenTofu and CloudFormation. Installs the c3x CLI and posts the per-PR cost change as a comment. No API key."
+description: "Cloud cost estimates for Terraform, OpenTofu and CloudFormation, posted on every pull request. No API key."
 branding:
   icon: "dollar-sign"
   color: "blue"
